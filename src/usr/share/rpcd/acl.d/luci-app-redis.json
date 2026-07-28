@@ -1,0 +1,18 @@
+{
+	"luci-app-redis": {
+		"description": "Grant access to LuCI app Redis",
+		"read": {
+			"file": {
+				"/etc/passwd": ["read"],
+				"/etc/group": ["read"]
+			},
+			"ubus": {
+				"service": ["list"]
+			},
+			"uci": ["redis"]
+		},
+		"write": {
+			"uci": ["redis"]
+		}
+	}
+}

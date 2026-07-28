@@ -1,0 +1,174 @@
+<%+header%>
+<div class="cbi-map" data-title="<%:Redis Overview%>">
+    <section class="cbi-section">
+        <h3 class="cbi-section-title"><%:Redis Server Status%></h3>
+        <div id="redis-status">
+            <p><%:Collecting data...%></p>
+        </div>
+        <div style="margin-top:10px">
+            <button class="cbi-button cbi-button-action" onclick="redisAction('start')"><%:Start%></button>
+            <button class="cbi-button cbi-button-action" onclick="redisAction('stop')"><%:Stop%></button>
+            <button class="cbi-button cbi-button-action" onclick="redisAction('restart')"><%:Restart%></button>
+        </div>
+    </section>
+
+    <section class="cbi-section">
+        <h3 class="cbi-section-title"><%:Server Info%></h3>
+        <table class="table" id="redis-info-table">
+            <tr><td><%:Version%></td><td id="redis-version">-</td></tr>
+            <tr><td><%:Mode%></td><td id="redis-mode">-</td></tr>
+            <tr><td><%:Port%></td><td id="redis-port">6379</td></tr>
+            <tr><td><%:PID%></td><td id="redis-pid">-</td></tr>
+            <tr><td><%:Memory%></td><td id="redis-mem">-</td></tr>
+            <tr><td><%:Uptime%></td><td id="redis-uptime">-</td></tr>
+            <tr><td><%:Connected Clients%></td><td id="redis-clients">-</td></tr>
+        </table>
+    </section>
+
+    <section class="cbi-section">
+        <h3 class="cbi-section-title"><%:Quick Command%></h3>
+        <div style="margin-bottom:8px">
+            <label>DB:</label>
+            <select id="redis-db" style="width:60px">
+                <option value="0">0</option>
+            </select>
+        </div>
+        <div style="margin-bottom:8px">
+            <label><%:Command%>:</label>
+            <input type="text" id="redis-cmd" value="PING" style="width:200px" placeholder="e.g. PING, INFO, DBSIZE">
+            <button class="cbi-button cbi-button-action" onclick="runRedisCmd()"><%:Execute%></button>
+        </div>
+        <pre id="redis-cmd-result" style="background:#f5f5f5;padding:10px;border:1px solid #ddd;max-height:400px;overflow:auto;font-family:monospace;font-size:13px"></pre>
+    </section>
+
+    <section class="cbi-section">
+        <h3 class="cbi-section-title"><%:Key Browser%></h3>
+        <div style="margin-bottom:8px">
+            <button class="cbi-button" onclick="loadKeys()"><%:Load Keys%></button>
+            <span id="redis-keys-count" style="margin-left:10px"></span>
+        </div>
+        <div id="redis-keys-list" style="max-height:300px;overflow:auto;border:1px solid #ddd;padding:5px"></div>
+    </section>
+</div>
+
+<script type="text/javascript">
+(function() {
+    function fmtUptime(secs) {
+        var d = Math.floor(secs / 86400);
+        var h = Math.floor((secs % 86400) / 3600);
+        var m = Math.floor((secs % 3600) / 60);
+        var s = secs % 60;
+        return d + 'd ' + h + 'h ' + m + 'm ' + s + 's';
+    }
+
+    function updateStatus() {
+        XHR.get('<%=url('admin/services/redis/status')%>', null, function(x, o) {
+            try {
+                var s = JSON.parse(o);
+                var html = '';
+                if (s.running) {
+                    html += '<span style="color:green"><strong><%:Redis is RUNNING%></strong></span><br>';
+                    html += '<%:PID%>: ' + s.pid + '<br>';
+                    html += '<%:Version%>: ' + s.version + '<br>';
+                } else {
+                    html += '<span style="color:red"><strong><%:Redis is NOT RUNNING%></strong></span>';
+                }
+                document.getElementById('redis-status').innerHTML = html;
+                document.getElementById('redis-version').textContent = s.version || '-';
+                document.getElementById('redis-mode').textContent = s.mode || '-';
+                document.getElementById('redis-port').textContent = s.port || '6379';
+                document.getElementById('redis-pid').textContent = s.pid || '-';
+                document.getElementById('redis-mem').textContent = (s.memory_kb || 0) + ' KB';
+                document.getElementById('redis-uptime').textContent = fmtUptime(s.uptime_seconds || 0);
+                document.getElementById('redis-clients').textContent = s.clients || '-';
+            } catch(e) {
+                document.getElementById('redis-status').innerHTML = '<span style="color:red">Error loading status</span>';
+            }
+        });
+    }
+
+    function redisAction(action) {
+        var fd = new FormData();
+        fd.append('action', action);
+        XHR.post('<%=url('admin/services/redis/action')%>', fd, function(x, o) {
+            setTimeout(updateStatus, 1500);
+        });
+        updateStatus();
+    }
+
+    function runRedisCmd() {
+        var cmd = document.getElementById('redis-cmd').value;
+        var db = document.getElementById('redis-db').value;
+        XHR.get('<%=url('admin/services/redis/command')%>', {cmd: cmd, db: db}, function(x, o) {
+            try {
+                var r = JSON.parse(o);
+                if (r.error) {
+                    document.getElementById('redis-cmd-result').textContent = 'Error: ' + r.error;
+                } else {
+                    document.getElementById('redis-cmd-result').textContent = r.result;
+                }
+            } catch(e) {
+                document.getElementById('redis-cmd-result').textContent = 'Error parsing response';
+            }
+        });
+    }
+
+    function loadKeys() {
+        var db = document.getElementById('redis-db').value;
+        XHR.get('<%=url('admin/services/redis/keys')%>', {db: db}, function(x, o) {
+            try {
+                var r = JSON.parse(o);
+                var keys = r.keys;
+                if (!Array.isArray(keys)) {
+                    keys = [];
+                }
+                var html = '';
+                if (keys.length > 0) {
+                    html += '<table class="table"><tr><th><%:Key%></th><th><%:Value%></th><th><%:Action%></th></tr>';
+                    for (var i = 0; i < keys.length; i++) {
+                        var k = keys[i];
+                        html += '<tr>';
+                        html += '<td><%=:esc%>' + k + '</td>';
+                        html += '<td><a href="#" onclick="getValue(\'' + k.replace(/'/g, "\\'") + '\', ' + db + ')">' + '<%:view%>' + '</a></td>';
+                        html += '<td><a href="#" onclick="deleteKey(\'' + k.replace(/'/g, "\\'") + '\', ' + db + ')" style="color:red">' + '<%:del%>' + '</a></td>';
+                        html += '</tr>';
+                    }
+                    html += '</table>';
+                } else {
+                    html = '<%:No keys found%>';
+                }
+                document.getElementById('redis-keys-list').innerHTML = html;
+                document.getElementById('redis-keys-count').textContent = (r.count || keys.length) + ' <%:keys%>';
+            } catch(e) {
+                document.getElementById('redis-keys-list').innerHTML = 'Error loading keys';
+            }
+        });
+    }
+
+    function getValue(key, db) {
+        XHR.get('<%=url('admin/services/redis/command')%>', {cmd: 'GET ' + key, db: db}, function(x, o) {
+            try {
+                var r = JSON.parse(o);
+                if (r.result) {
+                    alert(key + ' = ' + r.result);
+                }
+            } catch(e) {}
+        });
+    }
+
+    function deleteKey(key, db) {
+        if (confirm('<%:Delete key%>: ' + key + '?')) {
+            var fd = new FormData();
+            fd.append('key', key);
+            fd.append('db', db);
+            XHR.post('<%=url('admin/services/redis/delkey')%>', fd, function(x, o) {
+                loadKeys();
+            });
+        }
+    }
+
+    updateStatus();
+    setInterval(updateStatus, 5000);
+})();
+</script>
+<%+footer%>
