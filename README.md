@@ -4,54 +4,55 @@ A LuCI web interface for managing Redis server on OpenWrt and similar embedded L
 
 ## Features
 
-- Real-time Redis server status (running/stopped, auto-refreshing every 5 seconds)
+- Real-time Redis server status monitoring with auto-refresh
 - Start / Stop / Restart Redis service from the web UI
-- Server information display (version, mode, port, PID, memory, uptime, connected clients)
-- Quick command execution (PING, INFO, DBSIZE, etc.)
+- Server information display (version, mode, port, PID, memory, uptime, clients)
+- Quick command execution (PING, INFO, DBSIZE, GET, SET, etc.)
 - Key browser (list keys, view values, delete keys)
+
+## Known Compatible LuCI Versions
+
+- LuCI 23.x (Lua version)
+- LuCI 25.x (ucode version, Kwrt)
+- Other LuCI versions with standard controller/view support
 
 ## Installation
 
-### OpenWrt (ipk)
+### OpenWrt
 
 ```
 opkg update
 opkg install luci-app-redis
 ```
 
-### Alpine Linux (apk)
+### Build from source
 
-```
-apk add luci-app-redis
-```
-
-## Build from source
-
-### OpenWrt (ipk)
-
-```
+```bash
 make package/luci-app-redis/compile V=s
-```
-
-### Alpine Linux (apk)
-
-```
-abuild -r
 ```
 
 ## Usage
 
 After installation, access the Redis management page at:
 
-`https://<router-ip>/cgi-bin/luci/admin/services/redis`
+```
+http://<router-ip>/cgi-bin/luci/admin/services/redis/overview
+```
 
 Menu path: **Services** > **Redis**
 
+## File Structure
+
+```
+src/usr/lib/lua/luci/controller/redis.lua
+src/usr/lib/lua/luci/view/redis/overview.htm
+src/usr/share/rpcd/acl.d/luci-app-redis.json
+```
+
 ## Requirements
 
-- Redis server installed on the target system
-- LuCI web interface (OpenWrt) or similar web framework
-- Python 3 (for APK build on Alpine)
+- Redis server installed (`redis-server` package on OpenWrt)
+- LuCI web interface (OpenWrt: `luci-base`)
 
 ## License
 

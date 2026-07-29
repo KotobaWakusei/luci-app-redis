@@ -17,9 +17,7 @@ function index()
 end
 
 function redis_overview()
-	local http = require "luci.http"
-	local tpl = require "luci.template"
-	tpl.render("redis/overview")
+	luci.template.render("redis/overview")
 end
 
 function redis_status()
@@ -27,47 +25,77 @@ function redis_status()
 	local http = require "luci.http"
 	http.prepare_content("application/json")
 
-	local running = (sys.call("pgrep -af redis-server >/dev/null 2>&1") == 0)
-	local pid = sys.exec("pgrep -af redis-server 2>/dev/null | grep -v grep | head -1 | awk '{print $1}'"):gsub("%s+", "")
-	local mem = sys.exec("ps -o rss= -p " .. pid .. " 2>/dev/null | head -1"):gsub("%s+", "")
-	mem = mem or "0"
-	mem = tonumber(mem) or 0
+	local ping = sys.exec("redis-cli -n 0 ping 2>/dev/null") or ""
+	ping = ping:gsub("%s+", "")
+	local running = (ping == "PONG")
 
-	local uptime_s = sys.exec("cat /proc/" .. pid .. "/stat 2>/dev/null | awk '{print $16}'"):gsub("%s+", "")
+	if not running then
+		http.write_json({
+			running = false,
+			pid = 0,
+			memory_kb = 0,
+			uptime_seconds = 0,
+			version = "unknown",
+			mode = "unknown",
+			port = "6379",
+			clients = 0,
+			keyspace = {}
+		})
+		return
+	end
 
-	local info = sys.exec("redis-cli -n 0 info server 2>/dev/null | head -20")
-	local info_clients = sys.exec("redis-cli -n 0 info clients 2>/dev/null | head -10")
-	local info_keyspace = sys.exec("redis-cli -n 0 info keyspace 2>/dev/null | grep -v '^#'")
+	local info = sys.exec("redis-cli -n 0 info server 2>/dev/null") or ""
+	local info_clients = sys.exec("redis-cli -n 0 info clients 2>/dev/null") or ""
+	local info_keyspace = sys.exec("redis-cli -n 0 info keyspace 2>/dev/null") or ""
 
 	local redis_version = "unknown"
 	local redis_mode = "standalone"
 	local redis_tcp_port = "6379"
+	local process_id = 0
+
 	for line in info:gmatch("[^\r\n]+") do
 		local k, v = line:match("^([^:]+):(.+)")
+		if k then
+			k = k:gsub("%s+", "")
+			v = v:gsub("%s+", "")
+		end
 		if k == "redis_version" then redis_version = v end
 		if k == "redis_mode" then redis_mode = v end
 		if k == "tcp_port" then redis_tcp_port = v end
+		if k == "process_id" then process_id = tonumber(v) or 0 end
 	end
 
 	local clients = 0
 	for line in info_clients:gmatch("[^\r\n]+") do
-		local k, v = line:match("^connected_clients:(.+)")
-		if k then clients = tonumber(v) or 0 end
+		local k, v = line:match("^(connected_clients):(.+)")
+		if v then clients = tonumber(v:gsub("%s+", "")) or 0 end
+	end
+
+	local used_memory_rss = 0
+	for line in info:gmatch("[^\r\n]+") do
+		local k, v = line:match("^(used_memory_rss):(.+)")
+		if v then used_memory_rss = tonumber(v:gsub("%s+", "")) or 0 end
+	end
+
+	local uptime_s = 0
+	for line in info:gmatch("[^\r\n]+") do
+		local k, v = line:match("^(uptime_in_seconds):(.+)")
+		if v then uptime_s = tonumber(v:gsub("%s+", "")) or 0 end
 	end
 
 	local keyspace = {}
 	for line in info_keyspace:gmatch("[^\r\n]+") do
-		local db, keys_count = line:match("^db(%d+):keys=(%d+)")
-		if db and keys_count then
-			keyspace[db] = tonumber(keys_count) or 0
+		local dbnum, keys_count = line:match("^db(%d+):keys=(%d+)")
+		if dbnum and keys_count then
+			keyspace[dbnum] = tonumber(keys_count) or 0
 		end
 	end
 
 	http.write_json({
-		running = running,
-		pid = tonumber(pid) or 0,
-		memory_kb = mem,
-		uptime_seconds = tonumber(uptime_s) or 0,
+		running = true,
+		pid = process_id,
+		memory_kb = used_memory_rss,
+		uptime_seconds = uptime_s,
 		version = redis_version,
 		mode = redis_mode,
 		port = redis_tcp_port,
@@ -85,8 +113,9 @@ function redis_command()
 
 	http.prepare_content("application/json")
 
-	local result = sys.exec("redis-cli -n " .. db .. " " .. cmd .. " 2>&1")
-	http.write_json({result = result:gsub("%s+$", "")})
+	local result = sys.exec("redis-cli -n " .. db .. " " .. cmd .. " 2>&1") or ""
+	result = result:gsub("%s+$", "")
+	http.write_json({result = result})
 end
 
 function redis_keys()
@@ -97,7 +126,7 @@ function redis_keys()
 	http.prepare_content("application/json")
 
 	local keys = {}
-	local raw = sys.exec("redis-cli -n " .. db .. " keys '*' 2>&1")
+	local raw = sys.exec("redis-cli -n " .. db .. " keys '*' 2>&1") or ""
 	for line in raw:gmatch("[^\r\n]+") do
 		if line ~= "" and not line:match("^#") and not line:match("^ERR") then
 			keys[#keys + 1] = line
@@ -121,7 +150,7 @@ function redis_setkey()
 		return
 	end
 
-	local result = sys.exec("redis-cli -n " .. db .. " SET " .. sys.uq(key) .. " " .. sys.uq(value) .. " 2>&1")
+	local result = sys.exec("redis-cli -n " .. db .. " SET " .. sys.uq(key) .. " " .. sys.uq(value) .. " 2>&1") or ""
 	http.write_json({result = result:gsub("%s+$", "")})
 end
 
@@ -138,7 +167,7 @@ function redis_delkey()
 		return
 	end
 
-	local result = sys.exec("redis-cli -n " .. db .. " DEL " .. sys.uq(key) .. " 2>&1")
+	local result = sys.exec("redis-cli -n " .. db .. " DEL " .. sys.uq(key) .. " 2>&1") or ""
 	http.write_json({result = result:gsub("%s+$", "")})
 end
 
@@ -149,7 +178,6 @@ function redis_action()
 
 	http.prepare_content("application/json")
 
-	local cmd = "/etc/init.d/redis " .. action
-	local result = sys.exec(cmd .. " 2>&1")
-	http.write_json({result = result:gsub("%s+$", "")})
+	sys.call("/etc/init.d/redis " .. action .. " >/dev/null 2>&1")
+	http.write_json({result = "ok", action = action})
 end
