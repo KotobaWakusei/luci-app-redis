@@ -26,7 +26,6 @@
 			<tr><td><%:Memory%></td><td id="redis-mem">-</td></tr>
 			<tr><td><%:Uptime (s)%></td><td id="redis-uptime">-</td></tr>
 			<tr><td><%:Connected Clients%></td><td id="redis-clients">-</td></tr>
-			<tr><td><%:DB Keys%></td><td id="redis-keys">-</td></tr>
 		</table>
 	</section>
 
@@ -50,16 +49,31 @@
 	</section>
 </div>
 
-<script type="text/javascript">//<![CDATA[
-function redisAction(action) {
+<script type="text/javascript"> //<![CDATA[
+function encodeForm(data) {
+	var parts = [];
+	for (var key in data) {
+		if (data.hasOwnProperty(key)) {
+			parts.push(encodeURIComponent(key) + '=' + encodeURIComponent(data[key]));
+		}
+	}
+	return parts.join('&');
+}
+
+function postRedis(path, data, callback) {
 	var xhr = new XMLHttpRequest();
-	xhr.open('POST', '<%=url("admin/services/redis/action")%>', true);
+	xhr.open('POST', path, true);
 	xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
 	xhr.onload = function() {
-		setTimeout(refreshStatus, 1500);
+		if (callback) callback(xhr);
 	};
-	xhr.send('action=' + encodeURIComponent(action));
-	refreshStatus();
+	xhr.send(encodeForm(data));
+}
+
+function redisAction(action) {
+	postRedis('<%=url("admin/services/redis/action")%>', {action: action}, function() {
+		setTimeout(refreshStatus, 1000);
+	});
 }
 
 function refreshStatus() {
@@ -68,25 +82,28 @@ function refreshStatus() {
 	xhr.timeout = 5000;
 	xhr.onload = function() {
 		if (xhr.status == 200) {
-			var d = JSON.parse(xhr.responseText);
-			document.getElementById('redis-version').textContent = d.version || '-';
-			document.getElementById('redis-mode').textContent = d.mode || '-';
-			document.getElementById('redis-port').textContent = d.port || '6379';
-			document.getElementById('redis-pid').textContent = d.pid || '-';
-			document.getElementById('redis-mem').textContent = d.used_memory_rss_human || (d.mem_kb ? d.mem_kb + ' KB' : '-');
-			document.getElementById('redis-uptime').textContent = d.uptime_redis ? d.uptime_redis + 's' : '-';
-			document.getElementById('redis-clients').textContent = d.connected_clients || 0;
-			document.getElementById('redis-keys').textContent = d.db_keys || 0;
-			document.getElementById('redis-status').innerHTML = d.running
-				? '<span style="color:green"><strong><%:Running%></strong></span> <%:PID:%> ' + d.pid
-				: '<span style="color:red"><strong><%:Not Running%></strong></span>';
+			try {
+				var d = JSON.parse(xhr.responseText);
+				document.getElementById('redis-version').textContent = d.version || '-';
+				document.getElementById('redis-mode').textContent = d.mode || '-';
+				document.getElementById('redis-port').textContent = d.port || '6379';
+				document.getElementById('redis-pid').textContent = d.pid || '-';
+				document.getElementById('redis-mem').textContent = d.memory_kb ? d.memory_kb + ' KB' : '-';
+				document.getElementById('redis-uptime').textContent = d.uptime_seconds ? d.uptime_seconds + 's' : '-';
+				document.getElementById('redis-clients').textContent = d.clients || 0;
+				document.getElementById('redis-status').textContent = d.running
+					? '<%:Running%> (PID ' + d.pid + ')'
+					: '<%:Not Running%>';
+			} catch (e) {
+				document.getElementById('redis-status').textContent = '<%:Invalid response%>';
+			}
 		}
 	};
 	xhr.onerror = function() {
-		document.getElementById('redis-status').innerHTML = '<span style="color:red"><strong><%:Error connecting%></strong></span>';
+		document.getElementById('redis-status').textContent = '<%:Error connecting%>';
 	};
 	xhr.ontimeout = function() {
-		document.getElementById('redis-status').innerHTML = '<span style="color:red"><strong><%:Timeout%></strong></span>';
+		document.getElementById('redis-status').textContent = '<%:Timeout%>';
 	};
 	xhr.send();
 }
@@ -94,16 +111,18 @@ function refreshStatus() {
 function redisCmd() {
 	var cmd = document.getElementById('redis-cmd').value;
 	var db = document.getElementById('redis-db').value;
-	var xhr = new XMLHttpRequest();
-	xhr.open('POST', '<%=url("admin/services/redis/command")%>', true);
-	xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
-	xhr.onload = function() {
+	postRedis('<%=url("admin/services/redis/command")%>', {cmd: cmd, db: db}, function(xhr) {
 		if (xhr.status == 200) {
-			var r = JSON.parse(xhr.responseText);
-			document.getElementById('redis-result').textContent = r.output || r.result;
+			try {
+				var r = JSON.parse(xhr.responseText);
+				document.getElementById('redis-result').textContent = r.result || r.error || '';
+			} catch (e) {
+				document.getElementById('redis-result').textContent = '<%:Invalid response%>';
+			}
+		} else {
+			document.getElementById('redis-result').textContent = '<%:Request failed%>';
 		}
-	};
-	xhr.send('cmd=' + encodeURIComponent(cmd) + '&db=' + encodeURIComponent(db));
+	});
 }
 
 refreshStatus();
