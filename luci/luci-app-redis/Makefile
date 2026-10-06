@@ -3,13 +3,13 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-redis
-PKG_VERSION:=2026.10.06~ec0d7fb
+PKG_VERSION:=2026.10.06~8d6659f
 PKG_RELEASE:=1
 
 PKG_SOURCE_PROTO:=git
 PKG_SOURCE_URL:=https://github.com/KotobaWakusei/luci-app-redis.git
 PKG_SOURCE_DATE:=2026-10-06
-PKG_SOURCE_VERSION:=ec0d7fb02df3bab1bd896308ee443b5d196bbd66
+PKG_SOURCE_VERSION:=8d6659ffc9af8abced1552d1b2983638f9800974
 PKG_MIRROR_HASH:=
 
 PKG_MAINTAINER:=KotobaWakusei <kotobawakusei@users.noreply.github.com>
