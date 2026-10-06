@@ -61,6 +61,7 @@ function encodeForm(data) {
 }
 
 function postRedis(path, data, callback) {
+	data.token = '<%=token%>';
 	var xhr = new XMLHttpRequest();
 	xhr.open('POST', path, true);
 	xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
